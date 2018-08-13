@@ -12,6 +12,28 @@ const nopublish = href.searchParams.has("nopublish");
 //Get ws url from navigaro url
 const url = "wss://"+href.host;
 
+// AppID and AppSecret used by callstats
+var AppID     = "";
+var AppSecret = "";
+
+var enableCallstats = (AppID && AppSecret && AppID != "" && AppSecret != "");
+if (enableCallstats) var callstats = new callstats();
+
+// Callback functions used with callstats
+// callback function to receive status of the protocol messages
+function csInitCallback(csCode, csMsg) {
+  console.log("Status: " + (csCode == "success" ? "success" : "error, errCode= " + csCode) + ", Msg= " + csMsg );
+}
+
+ // callback function to receive the stats
+function csStatsCallback(stats) {
+	console.log(stats);
+}
+
+ // callbackfunction to receive status of pcObject
+function pcCallback (err, msg) {
+	console.log("Monitoring status: "+ err + " msg: " + msg);
+}
 	
 function addVideoForStream(stream,muted)
 {
@@ -42,11 +64,32 @@ function removeVideoForStream(stream)
 }
 
 function connect(url,roomId,name) 
-{
+{	
+	// Initialize callstats
+	if (enableCallstats) {
+		callstats.initialize(AppID, AppSecret, name, csInitCallback, csStatsCallback);
+	}
+
 	var pc = new RTCPeerConnection({
 		bundlePolicy: "max-bundle",
 		rtcpMuxPolicy : "require"
 	});
+
+	if (enableCallstats) {
+		// pcObject is created, tell callstats about it
+		// pick a fabricUsage enumeration, if pc is sending both media and data: use multiplex.
+ 		var usage = callstats.fabricUsage.multiplex;
+ 		//remoteUserID is the recipient's userID, it's the conferenceID in our case
+		//conferenceID is generated or provided by the origin server (webrtc service)
+		callstats.addNewFabric(pc, roomId, usage, roomId, pcCallback);
+ 		// let the "negotiationneeded" event trigger offer generation
+		pc.onnegotiationneeded = function () {
+			// create offer
+			pc.createOffer().then((err) =>
+				callstats.reportError(pc, roomId, callstats.webRTCFunctions.createOffer, err)
+			);
+		}
+	}
 	
 	//Create room url
 	const roomUrl = url +"?id="+roomId;
